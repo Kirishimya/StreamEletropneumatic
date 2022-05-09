@@ -1,0 +1,398 @@
+#include "Actuator.h"
+using namespace aciones;
+
+int actLen = 0, dumLen = 0; char dummies[] = {};
+Actuator** actuators;
+Actuator* actuator; /*= new Actuator(5, 6, 9, 8);*/
+
+struct Settings {
+  bool setting;
+  bool advance;
+  bool retreat;
+  bool timer;
+  bool value;
+  bool actuator;
+  bool trigger;
+  bool trigtype;
+  bool selected;
+  bool rspring;
+  bool rsolenoid;
+  bool readingN;
+  bool shifting;
+  bool create;
+} actSettings;
+
+char l = 'f';
+int sid = 0;
+//SoftwareSerial hc06(10, 11);/* RX pino 11 , TX pino 10 */
+
+void setup() {
+  actuators = new Actuator*[7];
+  initSettings();
+  initActPins();
+  for (int i = 0; i < 1; i++) {
+    actuators[i] = new DSolenoid(getActPins()); actuators[i]->setID(i);
+    actuators[i]->setup();
+    actuators[i]->setActuatorTriggerType(TCN);//tcc=1
+    actuators[i]->setActuatorTrigger(&l);
+    actuators[i]->actuate();
+    actLen +=1;
+  }
+  actuator = actuators[0]->giveThis();
+  actSettings.selected = true;
+  //actLen = 2;
+  Serial.begin(115200);
+  while (!Serial) {
+  }
+
+  Serial.println("ENTER AT Commands:");
+  //Initialize Bluetooth Serial Port
+  hc06.begin(9600);
+}
+unsigned long bfore = 0;
+void xactSettings(void* vParameter = NULL);
+void loop() {
+  //Write data from HC06 to Serial Monitor
+  //+++++++++código para o acionamento de um único atuador
+  readData(0);
+
+  selectActuator(0);
+  xactSettings();
+  ADDNEWACTS(actuators, dummies, dumLen, actLen, actSettings.create);
+  //teste individual
+  if (actSettings.selected) {
+    actuator->actuate();
+  }
+  if (millis() - bfore > 3000UL) {
+    Serial.println("quantidade de atuadores: " + String(actLen));
+    Serial.println("quantidade de atuadores dummies: " + String(dumLen));
+    Serial.println(dummies[0]);
+    bfore = millis();
+  }
+  //++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+  //Write from Serial Monitor to HC06
+  //  if (Serial.available()) {
+  //   hc06.write(Serial.read());
+  //  }
+}
+void initSettings() {
+  actSettings.setting = false;
+  actSettings.advance = false;
+  actSettings.retreat = false;
+  actSettings.timer = false;
+  actSettings.value = false;
+  actSettings.actuator = false;
+  actSettings.trigger = false;
+  actSettings.trigtype = false;
+  actSettings.selected = false;
+  actSettings.rspring = false;
+  actSettings.rsolenoid = false;
+  actSettings.readingN = false;
+  actSettings.shifting = false;
+  actSettings.create = false;
+}
+void readData(void* vParameters) {
+  //  while (1) {
+  if (hc06.available() > 0) {
+    char temp = hc06.read();
+    if (temp != ' ' ) {
+      l = temp;
+      Serial.println("canal Bluetooth com data");
+    }
+  } else if (Serial.available() > 0) {
+    char temp = Serial.read();
+    if (temp != ' ' ) {
+      l = temp;
+      Serial.println("canal Bluetooth com data");
+    }
+  }
+  //  }
+}
+void createActuators() {
+  //while(1){
+  char type;
+  int num;
+  //Serial.println("Passou por createActuators");
+  //  if (actSettings.rspring || l == RSPRING) {
+  //    actSettings.rspring = true;
+  //    actSettings.selected = false;
+  //    Serial.println("adcionando novo(s) atuador(s) do tipo retorno por mola...");
+  //    readINTEn();
+  //    num = getNum();
+  //    Serial.println("adcionando " + String(num) + " novo(s) atuadore(s) do tipo retorno por mola...");
+  //    for (int i = 0; i < num; i++) {
+  //      dummies[dumLen + i] = 'm';
+  //    }
+  //    dumLen += num;
+  //    actSettings.rspring = false;
+  /*  } else */
+  if (((actSettings.rsolenoid || l == RSOLENOID) || (actSettings.rspring || l == RSPRING)) && !(actSettings.create)) {
+    switch (l) {
+      case 'M': type = 'm'; actSettings.rspring = true; break;
+      case 'V': type = 'v'; actSettings.rsolenoid = true; break;
+      default: break;
+    }
+    //actSettings.rsolenoid = true;
+    actSettings.selected = false;
+    //Serial.println("adcionando novo(s) atuadore(s) do tipo dupla solenoid...");
+    readINTEn();
+    int num = getNum();
+    Serial.println("adcionando " + String(num) + " novo(s) atuador(s) do tipo " + (type == 'v' ? ("solenoid") : ("retorno por mola")) + "...");
+    for (int i = 0; i < num; i++) {
+      dummies[dumLen + i] = type;
+    }
+    dumLen += num;
+    switch (type) {
+      case 'm': actSettings.rspring = false; Serial.println("MOff..."); break;
+      case 'v': actSettings.rsolenoid = false; Serial.println("VOff..."); break;
+      default: break;
+    }
+  }
+  //while(l!=DONE&&l!=RESET)
+  if (l == DONE) {
+    //Serial.println("Adcionando " + String(dumLen) + " atuadore(s)");
+    //    for (int i = 0; i < dumLen; i++) {
+    //      if (dummies[i] == 'm') {                                        //*
+    //        //Serial.println("Adcionando atuador com retorno por mola."); //**
+    //        actuators[actLen + i] = new RSpring(getActPins());            //***
+    //        actuators[actLen + i]->setID(actLen+i);                       //****
+    //        actuators[actLen + i]->setup();                               //*****
+    //      } else if (dummies[i] == 'v') {                                 //******Área crítica de código onde ocorre reset do arduino
+    //        //Serial.println("Adcionando atuador com dupla solenoid");    //*****
+    //        actuators[actLen + i] = new DSolenoid(getActPins());          //****
+    //        actuators[actLen + i]->setID(actLen+i);                       //***
+    //        actuators[actLen + i]->setup();                               //**
+    //      }                                                               //*
+    //      dummies[i] = '0';
+    //    }
+    //    actLen += dumLen;
+    //    dumLen = 0;
+    actSettings.selected = true;
+    actSettings.create = true;
+    actSettings.setting = false;
+    //Serial.println("Número de atuadores: " + String(actLen));
+  }
+  if (l == RESET) {
+    Serial.println("Here we go again!");
+    Serial.println("Número de atuadores: " + String(actLen));
+    for (int i = 0; i < dumLen; i++) {
+      dummies[i] = '0';
+    }
+    dumLen = 0;
+    actSettings.selected = true;
+  }
+  //}
+}
+void selectActuator(void* vParameter) {
+  //while(1){
+  int getNum();
+  int id = -1;
+  if (l == SHIFT || actSettings.shifting) {
+    actSettings.shifting = true;
+    actSettings.selected = false;
+    readINTEn();
+    id = getNum();
+    if (id >= 0) {
+      Actuator* p = getActuatorByID(actuators, actLen, id);
+      actuator = (p != NULL) ? (p) : (actuator);
+      Serial.println("Atuador " + String(actuator->getID()) + " selecionado.");
+      actSettings.selected = true;
+      actSettings.shifting = false;
+    }
+  }
+  //}
+}
+void xactSettings(void* vParameter = NULL) {
+  //int getNum();
+
+  //while (1) {
+
+  if (l == SETUP || actSettings.setting) {
+    actSettings.setting = true;
+    if (actSettings.selected && !(actSettings.actuator)) {
+      actSettings.selected = false;
+    }
+    createActuators();
+    if (l == ACTUATOR || actSettings.actuator) {
+      
+      actSettings.actuator = true;
+      if (!actSettings.selected) {
+        //hc06.write(ALERT);
+        
+        sid = getNum();
+        Serial.println("Configurando atuador "+String(sid));
+        actuator = actuators[sid];
+        actSettings.selected = true;
+      }
+      if (l == TIMER || actSettings.timer) {
+        actSettings.timer = true;
+        if (l == TRIGTYPE || actSettings.trigtype) {
+          actSettings.trigtype = true;
+          if (((l - 48) >= 0) &&  ((l - 48) <= 9)) {
+            switch ((l - 48)) {
+              case NOTRIGGER: break;
+              case TCN: actuator->setTimerTriggerType(TCN);
+                actSettings.trigtype = false;
+                break;
+              case TYN: actuator->setTimerTriggerType(TYN);
+                actSettings.trigtype = false;
+                break;
+              case TSN: actuator->setTimerTriggerType(TSN);
+                actSettings.trigtype = false;
+                break;
+              case TAN: actuator->setTimerTriggerType(TAN);
+                actSettings.trigtype = false;
+                break;
+              case TRN: actuator->setTimerTriggerType(TRN);
+                actSettings.trigtype = false;
+                break;
+              case TEN: actuator->setTimerTriggerType(TEN);
+                actSettings.trigtype = false;
+                break;
+            }
+
+          }
+        } else if (l == TRIGGER || actSettings.trigger) {
+          actSettings.trigger = true;
+          int sel, sel2;
+          switch (actuator->getTimerTrigType()) {
+            case NOTRIGGER: break;
+            case TCN: actuator->setTimerTrigger(&l);
+              break;
+            case TSN:
+              sel = getNum();//seleciona o atuador que servirá como gatilho
+              if (sel + 1 < actLen) {
+                sel2 = getNum(); //seleciona qual o fim de curso. S1 ou S2?
+                actuator->setTimerTrigger((sel2 == 1) ? (actuators[sel]->giveS1()) : (actuators[sel]->giveS2()));
+              } else if (sel + 1 > actLen) {
+                Serial.println("Esse atuador não existe!");
+                hc06.write(ALERT);
+              }
+              break;
+            case TAN: actuator->setTimerTrigger(TAN);
+              break;
+            case TRN: actuator->setTimerTrigger(TRN);
+              break;
+            case TEN: actuator->setTimerTrigger(TEN);
+              break;
+          }
+        } else if (l == TIMER || actSettings.value) {
+          actSettings.value = true;
+          actuator->setTimer(getNum());
+          actSettings.value = false;
+        }
+      }
+      if (l == TRIGTYPE || actSettings.trigtype) {//configura o tipo de gatilho do atuador
+        actSettings.trigtype = true;
+        if (((l - 48) >= 0) &&  ((l - 48) <= 9)) {
+          switch ((l - 48)) {
+            case NOTRIGGER: break;
+            case TCN: actuator->setActuatorTriggerType(TCN);
+              actSettings.trigtype = false;
+              break;
+            case TYN: actuator->setActuatorTriggerType(TYN);
+              actSettings.trigtype = false;
+              break;
+            case TSN: actuator->setActuatorTriggerType(TSN);
+              actSettings.trigtype = false;
+              break;
+            case TAN: actuator->setActuatorTriggerType(TAN);
+              actSettings.trigtype = false;
+              break;
+            case TRN: actuator->setActuatorTriggerType(TRN);
+              actSettings.trigtype = false;
+              break;
+            case TEN: actuator->setActuatorTriggerType(TEN);
+              actSettings.trigtype = false;
+              break;
+          }
+
+        }
+      } else if (l == TRIGGER || actSettings.trigger) {
+        actSettings.trigger = true;
+        int sel, sel2, val;
+        switch (actuator->getActuatorTrigType()) {
+          case NOTRIGGER: break;
+          case TCN: actuator->setActuatorTrigger(&l);
+          actSettings.trigger = false;
+            break;
+          case TSN:
+            sel = getNum();//seleciona o atuador que servirá como gatilho
+            if (sel + 1 < actLen) {
+              sel2 = getNum(); //seleciona qual o fim de curso. S1 ou S2?
+              actuator->setActuatorTrigger((sel2 == 1) ? (actuators[sel]->giveS1()) : (actuators[sel]->giveS2()));
+              actSettings.trigger = false;
+            } else if (sel + 1 > actLen) {
+              Serial.println("Esse atuador não existe!");
+              hc06.write(ALERT);
+            }
+            break;
+          case TRN:
+          case TAN:
+            sel = getNum();//seleciona o atuador que servirá como gatilho
+            if (sel + 1 < actLen) {
+              sel2 = getNum(); //seleciona o contador. R ou A?
+              actuator->setActuatorTrigger((actuator->getActuatorTrigType() == TAN) ? (actuators[sel]->giveCounterA()) : (actuators[sel]->giveCounterR()));
+              //hc06.write();
+              val = getNum();
+              actuator->setActuatorTrigger(val);
+              actSettings.trigger = false;
+            } else if (sel + 1 > actLen) {
+              Serial.println("Esse atuador não existe!");
+              hc06.write(ALERT);
+            }
+            //actuator->setActuatorTrigger(TAN);
+            //actuator->setActuatorTrigger(TRN);
+            break;
+            //          case TEN: actuator->setActuatorTrigger(TEN);
+            //            break;
+        }
+      }
+      if (l == DONE) {
+        actSettings.selected = true;
+        actSettings.setting = false;
+        actSettings.actuator = false;
+        //Serial.println("Número de atuadores: " + String(actLen));
+      }
+      
+    }
+  }
+  //}
+}
+void readINTEn() {
+  actSettings.readingN = true;
+}
+void readINTUn() {
+  actSettings.readingN = false;
+}
+int getNum () {
+  //char l = '?';
+  int num = 0;
+  Serial.println ("Entre um numero algarismo por algarismo:\n");
+  while (actSettings.readingN)
+  {
+    l = WAITING;
+    //      printf ("Estado %c", l);
+    //    if (l == WAITING) {//**
+    readData(0);  //***teste
+    //    }                  //**
+    if (((l - 48) >= 0) &&  ((l - 48) <= 9)) {
+      num *= 10;
+      num += (l - 48);
+      Serial.println(" num == " + String(num));
+    } else if (l == BREAK) {
+      readINTUn();
+      Serial.println ("Saindo...");
+    }
+    else {
+      Serial.println ("Isso nao eh um numero!");
+      delay(5000);
+    }
+
+  }
+  return num;
+}
+int getNum (char p) {
+  int num = (p - 48 >= 0 && p - 48 <= 9) ? (p - 48) : (-1);
+  return num;
+}
